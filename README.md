@@ -1,21 +1,19 @@
 # CLERMONT-Cyriac
 
-Ma première page web en HTML.
+Portfolio de Cyriac Clermont, apprenti technicien (Bac Pro CIEL).
 
 ## Description
 
-Ce dépôt contient un petit site statique : une page d'accueil en HTML,
-une feuille de style CSS et un peu de JavaScript.
+Site personnel en une seule page, fait en HTML, CSS et JavaScript : présentation,
+compétences, projets, parcours et formulaire de contact. Il inclut un mode sombre
+et un « Lab 3D » pour manipuler du matériel réseau (baie, switch, serveur,
+Raspberry Pi, routeur).
 
 ## Structure du projet
 
 ```
 .
-├── index.html
-├── css/
-│   └── style.css
-├── js/
-│   └── main.js
+├── index.html   # tout le site (HTML, CSS et JavaScript)
 ├── README.md
 ├── LICENSE
 └── .gitignore
@@ -23,7 +21,8 @@ une feuille de style CSS et un peu de JavaScript.
 
 ## Utilisation
 
-Ouvre simplement `index.html` dans ton navigateur.
+Ouvre `index.html` dans ton navigateur. Une connexion internet est nécessaire
+pour charger les polices Google Fonts et les bibliothèques Three.js et Lenis.
 
 ## Auteur
 
