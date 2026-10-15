@@ -23,6 +23,8 @@ Portfolio personnel d'un apprenti technicien titulaire du **Bac Pro CIEL**
 │   └── JS/
 │       ├── main.js      # thème, texte tapé, particules, défilement, hyper motion
 │       └── lab3d.js     # modèles 3D (Three.js), vue éclatée, fenêtre d'inspection
+├── Mon site/
+│   └── index.html       # tout le site dans un seul fichier
 ├── README.md
 ├── LICENSE
 └── .gitignore
@@ -31,6 +33,7 @@ Portfolio personnel d'un apprenti technicien titulaire du **Bac Pro CIEL**
 ## Lancer le site
 
 Ouvre `Portofolio/HTML/index.html` dans un navigateur (Chrome, Firefox, Edge).
+Tu peux aussi ouvrir `Mon site/index.html` : c'est le même site, regroupé en un seul fichier.
 Une connexion internet est nécessaire : les polices et les bibliothèques sont chargées en ligne.
 Garde les trois dossiers ensemble : la page va chercher `../CSS/` et `../JS/`.
 
