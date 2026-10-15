@@ -15,13 +15,14 @@ Portfolio personnel d'un apprenti technicien titulaire du **Bac Pro CIEL**
 
 ```
 .
-├── HTML/
-│   └── index.html   # structure de la page
-├── CSS/
-│   └── style.css    # mise en page, couleurs, animations CSS
-├── JS/
-│   ├── main.js      # thème, texte tapé, particules, défilement, hyper motion
-│   └── lab3d.js     # modèles 3D (Three.js), vue éclatée, fenêtre d'inspection
+├── Portofolio/
+│   ├── HTML/
+│   │   └── index.html   # structure de la page
+│   ├── CSS/
+│   │   └── style.css    # mise en page, couleurs, animations CSS
+│   └── JS/
+│       ├── main.js      # thème, texte tapé, particules, défilement, hyper motion
+│       └── lab3d.js     # modèles 3D (Three.js), vue éclatée, fenêtre d'inspection
 ├── README.md
 ├── LICENSE
 └── .gitignore
@@ -29,7 +30,7 @@ Portfolio personnel d'un apprenti technicien titulaire du **Bac Pro CIEL**
 
 ## Lancer le site
 
-Ouvre `HTML/index.html` dans un navigateur (Chrome, Firefox, Edge).
+Ouvre `Portofolio/HTML/index.html` dans un navigateur (Chrome, Firefox, Edge).
 Une connexion internet est nécessaire : les polices et les bibliothèques sont chargées en ligne.
 Garde les trois dossiers ensemble : la page va chercher `../CSS/` et `../JS/`.
 
@@ -38,7 +39,7 @@ Pour développer, l'extension **Live Server** de VS Code recharge la page à cha
 ## Mettre en ligne avec GitHub Pages
 
 1. Dans **Settings → Pages**, choisis la branche `main` et le dossier `/ (root)`.
-2. Le site sera disponible à l'adresse `https://cyriacclermont-beep.github.io/CLERMONT-Cyriac/HTML/`.
+2. Le site sera disponible à l'adresse `https://cyriacclermont-beep.github.io/CLERMONT-Cyriac/Portofolio/HTML/`.
 
 ## Bibliothèques utilisées
 
