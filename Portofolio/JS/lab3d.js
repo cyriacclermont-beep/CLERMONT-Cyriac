@@ -108,12 +108,12 @@
       if (GC.has(key)) return GC.get(key);
       let g;
       const rr = Math.min(r, w / 2 - 1e-5, h / 2 - 1e-5, d / 2 - 1e-5);
-      if (T.RoundedBoxGeometry && rr > 0.0002) g = new T.RoundedBoxGeometry(w, h, d, 3, rr);
+      if (T.RoundedBoxGeometry && rr > 0.0002 && Math.min(w, h, d) > .005) g = new T.RoundedBoxGeometry(w, h, d, 2, rr);
       else g = new T.BoxGeometry(w, h, d);
       GC.set(key, g); return g;
     }
     function box(p, [w, h, d], [x, y, z], m, r = 0) { const o = new T.Mesh(geoBox(w, h, d, r), m); o.position.set(x, y, z); p.add(o); return o; }
-    function cyl(p, r, h, [x, y, z], m, axis = 'y', seg = 28, r2) {
+    function cyl(p, r, h, [x, y, z], m, axis = 'y', seg = r > .01 ? 28 : 14, r2) {
       const o = new T.Mesh(new T.CylinderGeometry(r2 ?? r, r, h, seg), m); o.position.set(x, y, z);
       if (axis === 'z') o.rotation.x = Math.PI / 2; else if (axis === 'x') o.rotation.z = Math.PI / 2; else if (axis === '-z') o.rotation.x = -Math.PI / 2;
       p.add(o); return o;
@@ -134,21 +134,20 @@
       return deco(plane(p, w, h, pos, m, o));
     }
     const font = (g, k, size, weight = 700, fam = MONO) => { g.font = `${weight} ${Math.max(6, size * k)}px ${fam}`; };
-    function tube(p, pts, color, r = .0028, seg = 64) {
+    function tube(p, pts, color, r = .0028, seg = 40) {
       const curve = new T.CatmullRomCurve3(pts.map(a => new T.Vector3(...a)), false, 'centripetal');
-      const o = new T.Mesh(new T.TubeGeometry(curve, seg, r, 10, false), mk('cable', { color })); p.add(o); return o;
+      const o = new T.Mesh(new T.TubeGeometry(curve, seg, r, 7, false), mk('cable', { color })); p.add(o); return o;
     }
     const screw = (p, x, y, z) => { cyl(p, .0031, .0014, [x, y, z + .0007], mk('nickel'), 'z', 20); box(p, [.004, .0007, .0003], [x, y, z + .0015], mk('void')); };
 
     const part = (p, ctx, label, info, ex) => {
       const g = new T.Group(); g.userData = { label, info, ex }; p.add(g); ctx.parts.push(g); return g;
     };
+    // Les voyants ne sont plus des objets séparés : on note leur position,
+    // puis ils sont tous dessinés d'un coup (InstancedMesh + Points) dans buildLeds().
     function led(p, ctx, [x, y, z], color, s = .0026, o = {}) {
-      const m = box(p, [s, s * .75, .0012], [x, y, z + .0006], mk('black', { color: 0x161616, emissive: color, emissiveIntensity: 3 }), s * .2);
-      m.userData.led = true; m.userData.noShadow = true;
-      const sp = new T.Sprite(new T.SpriteMaterial({ map: TX.glow, color: new T.Color(color).convertSRGBToLinear(), blending: T.AdditiveBlending, depthWrite: false, transparent: true, opacity: .9 }));
-      sp.position.set(x, y, z + .0025); sp.scale.setScalar(s * 5.5); sp.raycast = () => {}; deco(sp); p.add(sp);
-      ctx.leds.push({ m, sp, f: o.f ?? (3 + Math.random() * 14), p: Math.random() * 6.3, th: o.th ?? (-.3 + Math.random() * .9) });
+      const mk = new T.Object3D(); mk.position.set(x, y, z + .0006); mk.userData.led = true; p.add(mk);
+      ctx.leds.push({ mk, s, color: new T.Color(color).convertSRGBToLinear(), f: o.f ?? (3 + Math.random() * 14), p: Math.random() * 6.3, th: o.th ?? (-.3 + Math.random() * .9) });
     }
     function rj45(p, x, y, z, flip = false, frame = 'black') {
       const s = flip ? -1 : 1;
@@ -566,7 +565,7 @@
           M.needsUpdate = true;
         });
       });
-      v.isolated = keep || null; v.shadowDirty = true;
+      v.isolated = keep || null; v.shadowDirty = true; colorLeds(v, performance.now() / 1000);
       $('#mIsolate').textContent = keep ? 'Tout afficher' : 'Isoler la pièce';
     }
     function setHover(v, p) {
@@ -609,7 +608,7 @@
     function resize(v) {
       const host = v.canvas.parentElement, w = host.clientWidth, h = host.clientHeight;
       if (!w || !h) return;
-      v.renderer.setPixelRatio(Math.min(devicePixelRatio || 1, v.modal ? 2 : 1.6));
+      v.renderer.setPixelRatio(Math.max(.6, Math.min(devicePixelRatio || 1, v.modal ? 1.75 : 1.25) * quality));
       v.renderer.setSize(w, h, false);
       v.cam.aspect = w / h; v.cam.updateProjectionMatrix();
       v.base = v.fit / Math.min(1, v.cam.aspect * 1.05);
@@ -617,9 +616,92 @@
     function setExplode(v, x) { v.tEx = clamp(x, 0, 1); if (v.modal) $('#mExplode').value = Math.round(v.tEx * 100); updExBtn(v); }
     function updExBtn(v) { const b = $('.explode', v.card); b.textContent = v.tEx > .01 ? 'Rassembler' : 'Éclater'; b.setAttribute('aria-pressed', v.tEx > .01); }
 
+    const lowEnd = (navigator.hardwareConcurrency || 4) <= 4 || matchMedia('(pointer: coarse)').matches;
+    let quality = lowEnd ? .8 : 1;
+
+    // Fusionne les pièces qui partagent le même matériau : des milliers d'objets
+    // deviennent quelques dizaines, ce qui divise énormément le travail de la carte graphique.
+    function mergeStatic(root3) {
+      const BGU = T.BufferGeometryUtils; if (!BGU) return;
+      root3.updateMatrixWorld(true);
+      const groups = []; root3.traverse(o => { if (o.isGroup) groups.push(o); });
+      for (const g of groups) {
+        const buckets = new Map();
+        for (const m of g.children) {
+          if (!m.isMesh || m.isInstancedMesh) continue;
+          const M = m.material, G = m.geometry;
+          const key = [M.type, M.color && M.color.getHexString(), M.emissive && M.emissive.getHexString(), M.emissiveIntensity, M.roughness, M.metalness, M.clearcoat || 0,
+            M.map ? M.map.uuid : '', M.alphaMap ? M.alphaMap.uuid : '', M.emissiveMap ? M.emissiveMap.uuid : '', M.transparent, M.opacity, M.side, M.alphaTest, M.depthWrite, M.polygonOffset,
+            !!G.index, Object.keys(G.attributes).sort().join(','), m.userData.noShadow ? 1 : 0, m.userData.noGlow ? 1 : 0, M === MAT.pins || M === MAT.holes || M === MAT.slots || M === MAT.squares ? M.uuid : ''].join('|');
+          if (!buckets.has(key)) buckets.set(key, []);
+          buckets.get(key).push(m);
+        }
+        for (const list of buckets.values()) {
+          if (list.length < 2) continue;
+          const geos = list.map(m => { m.updateMatrix(); const gg = m.geometry.clone(); gg.applyMatrix4(m.matrix); return gg; });
+          const merged = BGU.mergeBufferGeometries(geos, false);
+          geos.forEach(x => x.dispose());
+          if (!merged) continue;
+          const mm = new T.Mesh(merged, list[0].material);
+          mm.userData = Object.assign({}, list[0].userData);
+          list.forEach(m => g.remove(m));
+          g.add(mm);
+        }
+      }
+    }
+
+    function buildLeds(v) {
+      const L = v.ctx.leds; if (!L.length) return;
+      v.root.updateMatrixWorld(true);
+      const tmp = new T.Vector3();
+      L.forEach(l => {
+        l.pos = v.root.worldToLocal(l.mk.getWorldPosition(tmp.clone()));
+        let o = l.mk.parent; while (o && !o.userData.label) o = o.parent;
+        l.part = o; l.mk.parent.remove(l.mk); delete l.mk;
+      });
+      const im = new T.InstancedMesh(new T.BoxGeometry(1, .75, .6), new T.MeshBasicMaterial({ toneMapped: false }), L.length);
+      im.instanceColor = new T.InstancedBufferAttribute(new Float32Array(L.length * 3), 3);
+      im.frustumCulled = false; im.raycast = () => {};
+      const avg = L.reduce((a, l) => a + l.s, 0) / L.length;
+      const pg = new T.BufferGeometry();
+      pg.setAttribute('position', new T.BufferAttribute(new Float32Array(L.length * 3), 3));
+      pg.setAttribute('color', new T.BufferAttribute(new Float32Array(L.length * 3), 3));
+      const pts = new T.Points(pg, new T.PointsMaterial({ size: avg * 6, map: TX.glow, vertexColors: true, transparent: true, depthWrite: false, blending: T.AdditiveBlending, sizeAttenuation: true, toneMapped: false }));
+      pts.frustumCulled = false; pts.raycast = () => {};
+      v.root.add(im); v.root.add(pts);
+      v.leds = { im, pts, L, dummy: new T.Object3D(), off: new T.Color(0x151515) };
+      placeLeds(v); colorLeds(v, 0);
+    }
+    function placeLeds(v) {
+      if (!v.leds) return;
+      const { im, pts, L, dummy } = v.leds, pos = pts.geometry.attributes.position;
+      L.forEach((l, i) => {
+        const P = l.part;
+        dummy.position.copy(l.pos);
+        if (P) dummy.position.add(P.position).sub(P.userData.p0);
+        dummy.scale.setScalar(l.s); dummy.updateMatrix();
+        im.setMatrixAt(i, dummy.matrix);
+        pos.setXYZ(i, dummy.position.x, dummy.position.y, dummy.position.z + l.s * .6);
+      });
+      im.instanceMatrix.needsUpdate = true; pos.needsUpdate = true;
+    }
+    function colorLeds(v, t) {
+      if (!v.leds) return;
+      const { im, pts, L, off } = v.leds, col = pts.geometry.attributes.color, c = new T.Color();
+      L.forEach((l, i) => {
+        const hidden = v.isolated && l.part !== v.isolated;
+        const on = !hidden && (reduce ? l.th < 0 : Math.sin(t * l.f + l.p) > l.th);
+        c.copy(on ? l.color : off).multiplyScalar(on ? 2.2 : 1);
+        if (hidden) c.setRGB(0, 0, 0);
+        im.setColorAt(i, c);
+        const g = on ? .9 : 0; col.setXYZ(i, l.color.r * g, l.color.g * g, l.color.b * g);
+      });
+      im.instanceColor.needsUpdate = true; col.needsUpdate = true;
+    }
+
     function create(card) {
       const def = MODELS[card.dataset.model], stage = $('.stage', card);
-      const renderer = new T.WebGLRenderer({ antialias: true, alpha: true, powerPreference: 'high-performance' });
+      const renderer = new T.WebGLRenderer({ antialias: !lowEnd, alpha: true, powerPreference: 'high-performance' });
       renderer.outputEncoding = T.sRGBEncoding;
       renderer.toneMapping = T.ACESFilmicToneMapping; renderer.toneMappingExposure = 1;
       renderer.shadowMap.enabled = true; renderer.shadowMap.type = T.PCFSoftShadowMap; renderer.shadowMap.autoUpdate = false;
@@ -639,6 +721,7 @@
       root3.position.sub(bb.getCenter(new T.Vector3()));
       const rad = bb.getBoundingSphere(new T.Sphere()).radius;
       if (ctx.door) ctx.door.rotation.y = 0;
+      mergeStatic(root3);
       root3.updateMatrixWorld(true);
       root3.traverse(o => { if (o.isMesh && !o.userData.noShadow && !(o.material.transparent && o.material.opacity < .6)) { o.castShadow = true; o.receiveShadow = true; } });
       // explosion : position de départ et direction de chaque pièce
@@ -663,7 +746,8 @@
       const key = new T.DirectionalLight(0xffffff, 1.6);
       key.position.set(rad * .7, rad * 3.6, rad * 1.1); key.castShadow = true;
       const sc = key.shadow.camera; sc.left = -rad * 1.6; sc.right = rad * 1.6; sc.top = rad * 1.6; sc.bottom = -rad * 1.6; sc.near = rad * .1; sc.far = rad * 8;
-      key.shadow.mapSize.set(2048, 2048); key.shadow.bias = -.0004; key.shadow.normalBias = rad * .004;
+      const sm = lowEnd ? 1024 : (card.dataset.model === 'rack' ? 2048 : 1024);
+      key.shadow.mapSize.set(sm, sm); key.shadow.bias = -.0004; key.shadow.normalBias = rad * .004;
       scene.add(key);
       const rim = new T.DirectionalLight(0xbfe3ff, .7); rim.position.set(-rad * 2, rad * 1.2, -rad * 2); scene.add(rim);
       const cam = new T.PerspectiveCamera(30, 1, rad * .01, rad * 60);
@@ -675,6 +759,8 @@
         tip: $('.tip', stage), info: $('.info', card), pointers: new Map(), moved: 0, shadowDirty: true, started: false
       };
       if (reduce) { v.yaw = v.tYaw; v.zoom = 1; v.door = 1; }
+      buildLeds(v);
+      let n = 0; root3.traverse(o => { if (o.isMesh) n++; }); v.drawCalls = n;
       resize(v);
 
       canvas.addEventListener('pointerdown', (e) => {
@@ -774,28 +860,54 @@
     $('#mIsolate').addEventListener('click', () => { if (!current) return; const v = current; if (v.isolated) ghost(v, null); else if (v.sel) ghost(v, v.sel); });
 
     /* ---------- Boucle de rendu ---------- */
-    cards.forEach(c => { try { create(c); } catch (err) { console.error(err); const l = $('.loading', c); if (l) { l.classList.add('err'); l.textContent = "Ce modèle 3D n'a pas pu s'afficher sur cet appareil."; } } });
+    // Chaque modèle n'est construit qu'à l'approche de la section : la page s'ouvre sans à-coup.
+    window.portfolio.lab = viewers;   // utile pour mesurer les performances dans la console
     const ro = new ResizeObserver(() => viewers.forEach(resize));
-    viewers.forEach(v => ro.observe(v.stage)); ro.observe(mStage);
+    ro.observe(mStage);
     const vis = new IntersectionObserver(es => es.forEach(e => { const v = viewers.find(x => x.stage === e.target); if (v) v.visible = e.isIntersecting; }), { rootMargin: '120px' });
-    viewers.forEach(v => vis.observe(v.stage));
+    const queue = [];
+    const build = (c) => {
+      if (c._built) return; c._built = true;
+      try { const v = create(c); ro.observe(v.stage); vis.observe(v.stage); }
+      catch (err) { console.error(err); const l = $('.loading', c); if (l) { l.classList.add('err'); l.textContent = "Ce modèle 3D n'a pas pu s'afficher sur cet appareil."; } }
+    };
+    const idle = window.requestIdleCallback ? (f) => requestIdleCallback(f, { timeout: 300 }) : (f) => setTimeout(f, 60);
+    const pump = () => { const c = queue.shift(); if (!c) return; build(c); if (queue.length) idle(pump); };
+    const near = new IntersectionObserver(es => es.forEach(e => {
+      if (!e.isIntersecting) return; near.unobserve(e.target);
+      queue.push(e.target); if (queue.length === 1) setTimeout(pump, 0);
+    }), { rootMargin: '600px 0px' });
+    cards.forEach(c => near.observe(c));
+    $$('.inspect, .explode').forEach(b => b.addEventListener('pointerdown', () => build(b.closest('.viewer-card')), { capture: true }));
 
-    let last = performance.now();
+    let last = performance.now(), ema = 16, slowFor = 0, fastFor = 0;
+    function adapt(dtMs) {
+      ema += (dtMs - ema) * .08;
+      if (ema > 24) { slowFor += dtMs; fastFor = 0; } else if (ema < 15) { fastFor += dtMs; slowFor = 0; } else { slowFor = fastFor = 0; }
+      if (slowFor > 1200 && quality > .6) { quality = Math.max(.6, quality - .15); slowFor = 0; viewers.forEach(resize); }
+      if (fastFor > 4000 && quality < 1) { quality = Math.min(1, quality + .1); fastFor = 0; viewers.forEach(resize); }
+    }
     function loop(now) {
-      const dt = Math.min(.05, (now - last) / 1000); last = now;
+      const dtMs = now - last, dt = Math.min(.05, dtMs / 1000); last = now;
       const t = now / 1000, k = 1 - Math.exp(-dt * 7);
+      let drew = false;
       for (const v of viewers) {
         if (!(v.visible || v.modal)) continue;
+        if (current && !v.modal) continue;               // la fenêtre d'inspection cache les autres modèles
+        const busy = v.modal || v.drag || v.hover || Math.abs(v.tEx - v.ex) > .0005 || (v.ctx.door && v.door < 1);
+        if (!busy && v.lastDraw && now - v.lastDraw < 32) continue;   // ~30 images/s pour les cartes au repos
+        const vdt = v.lastDraw ? Math.min(.05, (now - v.lastDraw) / 1000) : dt; v.lastDraw = now; drew = true;
         if (!v.started) { v.started = true; v.tStart = t; }
-        if (v.auto && !v.drag) v.tYaw += dt * .28 + clamp(motion.vel, -60, 60) * .0009;
-        v.yaw += (v.tYaw - v.yaw) * k; v.pitch += (v.tPitch - v.pitch) * k; v.zoom += (v.tZoom - v.zoom) * k;
+        const kv = 1 - Math.exp(-vdt * 7);
+        if (v.auto && !v.drag) v.tYaw += vdt * .28 + clamp(motion.vel, -60, 60) * .0009;
+        v.yaw += (v.tYaw - v.yaw) * kv; v.pitch += (v.tPitch - v.pitch) * kv; v.zoom += (v.tZoom - v.zoom) * kv;
         // vue éclatée
-        const kx = 1 - Math.exp(-dt * 5);
+        const kx = 1 - Math.exp(-vdt * 5);
         if (Math.abs(v.tEx - v.ex) > .0005) {
           v.ex += (v.tEx - v.ex) * (reduce ? 1 : kx);
           const e = ease(v.ex);
           v.ctx.parts.forEach(p => p.position.copy(p.userData.p0).addScaledVector(p.userData.dir, e));
-          v.shadowDirty = true;
+          placeLeds(v); v.shadowDirty = true;
         }
         // ouverture de la porte de la baie
         if (v.ctx.door && v.door < 1) {
@@ -806,13 +918,14 @@
         v.cam.position.set(Math.sin(v.yaw) * Math.cos(v.pitch) * d, Math.sin(v.pitch) * d, Math.cos(v.yaw) * Math.cos(v.pitch) * d);
         v.cam.lookAt(0, 0, 0);
         if (!reduce) {
-          for (const l of v.ctx.leds) { const on = Math.sin(t * l.f + l.p) > l.th; l.m.material.emissiveIntensity = on ? 3 : .08; l.sp.material.opacity = on ? .9 : 0; }
-          for (const s of v.ctx.spin) s.o.rotation.z += dt * s.s;
+          colorLeds(v, t);
+          for (const s of v.ctx.spin) s.o.rotation.z += vdt * s.s;
           for (const s of v.ctx.sway) s.o.rotation.z = s.base + Math.sin(t * 1.1 + s.p) * .025;
         }
         if (v.shadowDirty) { v.renderer.shadowMap.needsUpdate = true; v.shadowDirty = false; }
         v.renderer.render(v.scene, v.cam);
       }
+      if (drew) adapt(dtMs);
       requestAnimationFrame(loop);
     }
     requestAnimationFrame(loop);

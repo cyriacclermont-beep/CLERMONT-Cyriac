@@ -15,7 +15,7 @@
   $('#themeBtn').addEventListener('click', () => {
     root.dataset.theme = root.dataset.theme === 'dark' ? 'light' : 'dark';
     try { localStorage.setItem('theme', root.dataset.theme); } catch (e) {}
-    drawThumbs();
+    netColors(); drawThumbs();
   });
 
   /* ---------- Toast ---------- */
@@ -73,45 +73,66 @@
 
   /* ---------- Réseau de particules (hero) ---------- */
   const cv = $('#net'), ctx = cv.getContext('2d');
-  let pts = [], W = 0, H = 0, mouse = { x: -999, y: -999 };
+  let pts = [], W = 0, H = 0, mouse = { x: -999, y: -999 }, heroRect = null;
   const hexToRgb = (h) => { h = h.replace('#', ''); if (h.length === 3) h = h.split('').map(c => c + c).join(''); const n = parseInt(h, 16); return [n >> 16 & 255, n >> 8 & 255, n & 255]; };
+  let COL = { acc: '#0b8a8f', dot: 'rgba(91,109,117,.7)', line: [] };
+  function netColors() {
+    const [r, g, b] = hexToRgb(css('--accent') || '#0b8a8f'), [fr, fg, fb] = hexToRgb(css('--muted') || '#5b6d75');
+    COL = { acc: `rgb(${r},${g},${b})`, dot: `rgba(${fr},${fg},${fb},.7)`, line: [.1, .2, .3].map(a => `rgba(${fr},${fg},${fb},${a})`) };
+  }
+  netColors();
   const resize = () => {
-    const dpr = Math.min(devicePixelRatio || 1, 2);
-    W = cv.offsetWidth; H = cv.offsetHeight;
+    const dpr = Math.min(devicePixelRatio || 1, 1.5);
+    W = cv.offsetWidth; H = cv.offsetHeight; heroRect = null;
     cv.width = W * dpr; cv.height = H * dpr; ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    const n = Math.min(90, Math.floor(W * H / 14000));
+    const n = Math.min(innerWidth < 700 ? 34 : 60, Math.floor(W * H / 18000));
     pts = Array.from({ length: n }, () => ({ x: Math.random() * W, y: Math.random() * H, vx: (Math.random() - .5) * .4, vy: (Math.random() - .5) * .4 }));
   };
+  const LINK = 130, LINK2 = LINK * LINK;
   const frame = () => {
     ctx.clearRect(0, 0, W, H);
-    const [r, g, b] = hexToRgb(css('--accent') || '#f2c14e');
-    const [fr, fg, fb] = hexToRgb(css('--muted') || '#8fa3a2');
     for (const p of pts) {
       if (!reduce) { p.x += p.vx; p.y += p.vy; }
       if (p.x < 0 || p.x > W) p.vx *= -1;
       if (p.y < 0 || p.y > H) p.vy *= -1;
-      const dx = p.x - mouse.x, dy = p.y - mouse.y, dm = Math.hypot(dx, dy);
-      if (dm < 120 && !reduce) { p.x += dx / dm * 1.2; p.y += dy / dm * 1.2; }
+      const dx = p.x - mouse.x, dy = p.y - mouse.y, d2 = dx * dx + dy * dy;
+      if (d2 < 14400 && d2 > 1 && !reduce) { const dm = Math.sqrt(d2); p.x += dx / dm * 1.2; p.y += dy / dm * 1.2; }
     }
+    // les traits sont regroupés en 3 niveaux d'opacité : 3 dessins au lieu d'un par trait
+    const buckets = [[], [], []];
     for (let i = 0; i < pts.length; i++) {
+      const a = pts[i];
       for (let j = i + 1; j < pts.length; j++) {
-        const a = pts[i], c = pts[j], d = Math.hypot(a.x - c.x, a.y - c.y);
-        if (d < 130) { ctx.strokeStyle = `rgba(${fr},${fg},${fb},${(1 - d / 130) * .35})`; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(c.x, c.y); ctx.stroke(); }
+        const c = pts[j], dx = a.x - c.x, dy = a.y - c.y, d2 = dx * dx + dy * dy;
+        if (d2 < LINK2) buckets[d2 < LINK2 * .25 ? 2 : d2 < LINK2 * .6 ? 1 : 0].push(a.x, a.y, c.x, c.y);
       }
-      const p = pts[i], near = Math.hypot(p.x - mouse.x, p.y - mouse.y) < 160;
-      ctx.fillStyle = near ? `rgb(${r},${g},${b})` : `rgba(${fr},${fg},${fb},.7)`;
-      ctx.beginPath(); ctx.arc(p.x, p.y, near ? 2.6 : 1.6, 0, Math.PI * 2); ctx.fill();
     }
-    if (!reduce && netOn) requestAnimationFrame(frame); else netRunning = false;
+    ctx.lineWidth = 1;
+    buckets.forEach((bk, k) => {
+      if (!bk.length) return;
+      ctx.strokeStyle = COL.line[k]; ctx.beginPath();
+      for (let i = 0; i < bk.length; i += 4) { ctx.moveTo(bk[i], bk[i + 1]); ctx.lineTo(bk[i + 2], bk[i + 3]); }
+      ctx.stroke();
+    });
+    ctx.fillStyle = COL.dot; ctx.beginPath();
+    const near = [];
+    for (const p of pts) {
+      const dx = p.x - mouse.x, dy = p.y - mouse.y;
+      if (dx * dx + dy * dy < 25600) { near.push(p); continue; }
+      ctx.moveTo(p.x + 1.6, p.y); ctx.arc(p.x, p.y, 1.6, 0, Math.PI * 2);
+    }
+    ctx.fill();
+    if (near.length) { ctx.fillStyle = COL.acc; ctx.beginPath(); near.forEach(p => { ctx.moveTo(p.x + 2.6, p.y); ctx.arc(p.x, p.y, 2.6, 0, Math.PI * 2); }); ctx.fill(); }
+    if (!reduce && netOn && !document.hidden) requestAnimationFrame(frame); else netRunning = false;
   };
   let netOn = true, netRunning = true;
   resize(); frame();
-  if ('IntersectionObserver' in window) new IntersectionObserver(([e]) => {
-    netOn = e.isIntersecting;
-    if (netOn && !netRunning && !reduce) { netRunning = true; requestAnimationFrame(frame); }
-  }).observe($('.hero'));
+  const wakeNet = () => { if (netOn && !netRunning && !reduce && !document.hidden) { netRunning = true; requestAnimationFrame(frame); } };
+  if ('IntersectionObserver' in window) new IntersectionObserver(([e]) => { netOn = e.isIntersecting; wakeNet(); }).observe($('.hero'));
+  document.addEventListener('visibilitychange', wakeNet);
   addEventListener('resize', () => { resize(); if (reduce) frame(); drawThumbs(); });
-  $('.hero').addEventListener('mousemove', (e) => { const r = cv.getBoundingClientRect(); mouse.x = e.clientX - r.left; mouse.y = e.clientY - r.top; });
+  $('.hero').addEventListener('mousemove', (e) => { const r = heroRect || (heroRect = cv.getBoundingClientRect()); mouse.x = e.clientX - r.left; mouse.y = e.clientY - r.top; }, { passive: true });
+  addEventListener('scroll', () => { heroRect = null; }, { passive: true });
   $('.hero').addEventListener('mouseleave', () => { mouse.x = mouse.y = -999; });
 
   /* ---------- Vignettes de projets génératives ---------- */
@@ -180,9 +201,9 @@
   let lenis = null;
   if (!reduce && window.Lenis) {
     root.style.scrollBehavior = 'auto';
-    lenis = new Lenis({ duration: 1.15, easing: (t) => 1 - Math.pow(1 - t, 4), smoothWheel: true });
-    const lr = (t) => { lenis.raf(t); requestAnimationFrame(lr); };
-    requestAnimationFrame(lr);
+    lenis = new Lenis({ duration: 1.1, easing: (t) => 1 - Math.pow(1 - t, 4), smoothWheel: true });
+    if (window.gsap) { gsap.ticker.add((t) => lenis.raf(t * 1000)); gsap.ticker.lagSmoothing(0); }
+    else { const lr = (t) => { lenis.raf(t); requestAnimationFrame(lr); }; requestAnimationFrame(lr); }
   }
   const goTo = (target) => {
     if (lenis) lenis.scrollTo(target, { offset: target === 0 ? 0 : -70 });
@@ -200,22 +221,26 @@
   const nav = $('#nav'), prog = $('#progress'), fill = $('#tlFill'), tl = $('#timeline');
   const sections = $$('section[id]'), navLinks = $$('.links a'), steps = $$('.step');
   const tp = $('#totop'), ring = $('#ringProg'), hc = $('#heroContent');
+  let last = {};
   const onScroll = () => {
+    // 1) lectures (aucune écriture avant, pour éviter les recalculs de mise en page forcés)
     const y = scrollY, vh = innerHeight;
     const max = document.documentElement.scrollHeight - vh;
     const ratio = max > 0 ? y / max : 0;
-    prog.style.transform = `scaleX(${ratio})`;
-    nav.classList.toggle('scrolled', y > 10);
     const r = tl.getBoundingClientRect();
-    const p = Math.max(0, Math.min(1, (vh * .7 - r.top) / r.height));
-    fill.style.height = `calc(${p * 100}% - 12px)`;
-    steps.forEach(s => { if (!s.classList.contains('lit') && s.getBoundingClientRect().top < vh * .7) s.classList.add('lit'); });
-    tp.classList.toggle('show', y > vh * .6);
-    ring.style.strokeDashoffset = 150.8 * (1 - ratio);
-    if (!reduce && !window.gsap && y < vh * 1.2) { hc.style.transform = `translate3d(0, ${y * .25}px, 0)`; hc.style.opacity = Math.max(0, 1 - y / (vh * .9)); }
+    const lit = steps.filter(s => !s.classList.contains('lit') && s.getBoundingClientRect().top < vh * .7);
     let cur = '';
     sections.forEach(s => { if (s.getBoundingClientRect().top < vh * .4) cur = s.id; });
-    navLinks.forEach(a => a.classList.toggle('active', a.getAttribute('href') === '#' + cur));
+    // 2) écritures
+    const p = Math.max(0, Math.min(1, (vh * .7 - r.top) / r.height));
+    prog.style.transform = `scaleX(${ratio})`;
+    if (last.sc !== (y > 10)) nav.classList.toggle('scrolled', last.sc = y > 10);
+    if (Math.abs((last.p ?? -1) - p) > .001) { fill.style.height = `calc(${p * 100}% - 12px)`; last.p = p; }
+    lit.forEach(s => s.classList.add('lit'));
+    if (last.tp !== (y > vh * .6)) tp.classList.toggle('show', last.tp = y > vh * .6);
+    ring.style.strokeDashoffset = 150.8 * (1 - ratio);
+    if (!reduce && !window.gsap && y < vh * 1.2) { hc.style.transform = `translate3d(0, ${y * .25}px, 0)`; hc.style.opacity = Math.max(0, 1 - y / (vh * .9)); }
+    if (last.cur !== cur) { navLinks.forEach(a => a.classList.toggle('active', a.getAttribute('href') === '#' + cur)); last.cur = cur; }
   };
   let scrollQueued = false;
   addEventListener('scroll', () => {
@@ -258,10 +283,15 @@
   if (fine && !reduce) {
     const c = $('#cursor'), d = $('#cursorDot');
     let mx = 0, my = 0, cx = 0, cy = 0;
-    addEventListener('mousemove', (e) => { mx = e.clientX; my = e.clientY; d.style.transform = `translate(${mx}px, ${my}px)`; document.body.classList.add('has-cursor'); });
+    addEventListener('mousemove', (e) => { mx = e.clientX; my = e.clientY; d.style.transform = `translate3d(${mx}px, ${my}px, 0)`; document.body.classList.add('has-cursor'); });
     document.addEventListener('mouseleave', () => document.body.classList.remove('has-cursor'));
-    const loop = () => { cx += (mx - cx) * .18; cy += (my - cy) * .18; c.style.transform = `translate(${cx}px, ${cy}px)`; requestAnimationFrame(loop); };
-    loop();
+    let running = false;
+    const loop = () => {
+      cx += (mx - cx) * .2; cy += (my - cy) * .2;
+      c.style.transform = `translate3d(${cx}px, ${cy}px, 0)`;
+      if (Math.abs(mx - cx) + Math.abs(my - cy) > .3) requestAnimationFrame(loop); else running = false;
+    };
+    addEventListener('mousemove', () => { if (!running) { running = true; requestAnimationFrame(loop); } }, { passive: true });
     $$('a, button, .card, input, textarea').forEach(el => {
       el.addEventListener('mouseenter', () => c.classList.add('big'));
       el.addEventListener('mouseleave', () => c.classList.remove('big'));
@@ -360,9 +390,15 @@
       });
       walk(p);
     });
+    let litN = 0;
     ScrollTrigger.create({
       trigger: '.about', start: 'top 80%', end: 'bottom 45%', scrub: true,
-      onUpdate: (s) => { const n = Math.round(s.progress * words.length); words.forEach((w, i) => w.classList.toggle('lit', i < n)); }
+      onUpdate: (s) => {
+        const n = Math.round(s.progress * words.length);
+        if (n === litN) return;
+        for (let i = Math.min(n, litN); i < Math.max(n, litN); i++) words[i].classList.toggle('lit', i < n);
+        litN = n;
+      }
     });
 
     // 3. Les grandes lignes de texte glissent en sens inverse
@@ -376,21 +412,23 @@
     const track = $('.marquee .track');
     let mx = 0, dirM = -1;
     if (track) track.style.animation = 'none';
+    let half = track ? track.scrollWidth / 2 : 0, lastSk = 0, mqOn = true;
+    addEventListener('resize', () => { if (track) half = track.scrollWidth / 2; });
+    if (track) new IntersectionObserver(([e]) => { mqOn = e.isIntersecting; }).observe(track);
     gsap.ticker.add((time, delta) => {
       const v = clamp(motion.vel, -80, 80);
-      const sk = clamp(-v * .35, -14, 14);
-      skewers.forEach(q => q(sk));
-      if (track) {
+      const sk = Math.round(clamp(-v * .35, -14, 14) * 10) / 10;
+      if (sk !== lastSk) { skewers.forEach(q => q(sk)); lastSk = sk; }
+      if (track && mqOn) {
         if (Math.abs(v) > .5) dirM = v > 0 ? -1 : 1;
         mx += dirM * (0.6 + Math.abs(v) * .25) * (delta / 16.7);
-        const half = track.scrollWidth / 2;
         if (mx <= -half) mx += half; if (mx > 0) mx -= half;
         track.style.transform = `translate3d(${mx}px,0,0) skewX(${sk * .6}deg)`;
       }
     });
 
     // 5. Le Lab 3D s'ouvre comme un écran qui s'allume
-    gsap.fromTo('.lab', { clipPath: 'inset(10% 8% 10% 8% round 28px)', scale: .92 }, { clipPath: 'inset(0% 0% 0% 0% round 0px)', scale: 1, ease: 'none', scrollTrigger: { trigger: '.lab', start: 'top 95%', end: 'top 35%', scrub: .5 } });
+    gsap.fromTo('.lab', { scale: .9, y: 40 }, { scale: 1, y: 0, ease: 'none', scrollTrigger: { trigger: '.lab', start: 'top 95%', end: 'top 35%', scrub: .5 } });
     $$('.viewer-card, .step').forEach(el => { el.classList.remove('reveal'); el.style.transitionDelay = ''; });
     $$('.viewer-card').forEach((c, i) => gsap.fromTo(c, { rotateX: 18, y: 60, transformPerspective: 900 }, { rotateX: 0, y: 0, ease: 'none', scrollTrigger: { trigger: c, start: 'top bottom', end: 'top 60%', scrub: .6 } }));
 
