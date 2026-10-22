@@ -540,6 +540,192 @@
       }
     };
 
+    /* ---------- Détails supplémentaires (arrière, câblage, composants) ---------- */
+    const findPart = (ctx, label) => ctx.parts.find(p => p.userData.label === label);
+    const rearGroup = (p) => { const r = new T.Group(); r.rotation.y = Math.PI; p.add(r); return r; };
+    function fanDisc(p, ctx, [x, y, z], r, dir = 1, speed = 18) {
+      // ventilateur vu de face : fond sombre, pales qui tournent, grille en anneaux
+      cyl(p, r, .001, [x, y, z], mk('void'), dir > 0 ? 'z' : '-z', 32);
+      const hub = new T.Group(); hub.position.set(x, y, z + dir * .0008); p.add(hub);
+      cyl(hub, r * .3, .0012, [0, 0, 0], mk('plastic', { color: 0x24272b }), 'z', 24);
+      const bg = new T.BoxGeometry(r * .62, r * .26, .0005); bg.translate(r * .55, 0, 0);
+      for (let b = 0; b < 7; b++) { const piv = new T.Group(); piv.rotation.z = b * Math.PI * 2 / 7; const bl = new T.Mesh(bg, mk('plastic', { color: 0x2b2f34 })); bl.rotation.x = .45; piv.add(bl); hub.add(piv); }
+      ctx.spin.push({ o: hub, s: speed });
+      for (const k of [.45, .75, 1]) { const ring = new T.Mesh(new T.TorusGeometry(r * k, r * .035, 6, 40), mk('nickel')); ring.position.set(x, y, z + dir * .0018); p.add(ring); }
+      for (let a = 0; a < 4; a++) box(p, [r * 2, r * .07, r * .07], [x, y, z + dir * .0018], mk('nickel')).rotation.z = a * Math.PI / 4;
+    }
+    function handle(p, x, y, z, h) {
+      const t = new T.Mesh(new T.TorusGeometry(h / 2, .0022, 10, 24, Math.PI), mk('nickel'));
+      t.position.set(x, y, z); t.rotation.set(0, -Math.PI / 2, -Math.PI / 2); p.add(t);
+      for (const s of [-1, 1]) cyl(p, .0035, .004, [x, y + s * h / 2, z + .001], mk('nickel'), 'z', 16);
+    }
+    const barcode = (p, w, h, pos, txt) => textPlane(p, w, h, pos, (g2, k, X, Y) => {
+      g2.fillStyle = '#f6f7f8'; g2.fillRect(0, 0, 1e4, 1e4); g2.fillStyle = '#111';
+      let x = X(-w / 2 + w * .06); const end = X(w / 2 - w * .06); while (x < end) { const bw = (Math.random() < .5 ? 1 : 2.4) * k * w / 160; g2.fillRect(x, Y(h / 2 - h * .12), bw, h * .55 * k); x += bw * (1.6 + Math.random() * 1.4); }
+      font(g2, k, h * .24, 700); g2.textAlign = 'center'; g2.fillText(txt, X(0), Y(-h * .3));
+    }, { res: 512 });
+    const chip = (p, [x, z], [w, d], label, sub, y0 = .0014, h = .001) => {
+      box(p, [w, h, d], [x, y0 + h / 2, z], mk('black', { roughness: .4 }), Math.min(w, d) * .06);
+      textPlane(p, w * .9, d * .8, [x, y0 + h + .00006, z], (g2, k, X, Y) => { g2.fillStyle = 'rgba(210,210,210,.7)'; font(g2, k, Math.min(w, d) * .16, 700); g2.textAlign = 'center'; g2.fillText(label, X(0), Y(d * .1)); if (sub) { font(g2, k, Math.min(w, d) * .11, 500); g2.fillText(sub, X(0), Y(-d * .18)); } }, { res: 256, rx: -Math.PI / 2 });
+    };
+
+    const DETAILS = {
+      rack(g, ctx) {
+        const W = .6, D = .8, N = 22, y0 = .1, H = y0 + N * U + .05, Zf = D / 2 - .09, BD = .5, RZ = Zf - BD - .0025;
+        const yAt = (u, h = 1) => y0 + (N - u - h + 1) * U + h * U / 2;
+        const fr = findPart(ctx, 'Châssis de la baie');
+        // ventilateurs de toit
+        for (const x of [-.13, .13]) {
+          const top = new T.Group(); top.position.set(x, H + .0004, -.05); top.rotation.x = -Math.PI / 2; fr.add(top);
+          fanDisc(top, ctx, [0, 0, 0], .055, 1, 9);
+        }
+        // pieds de mise à niveau
+        for (const sx of [-1, 1]) for (const sz of [-1, 1]) { cyl(fr, .006, .05, [sx * .27, .035, sz * .37], mk('nickel'), 'y', 16); cyl(fr, .018, .006, [sx * .27, .006, sz * .37], mk('rubber'), 'y', 24); }
+        // câble de terre vert/jaune
+        tube(fr, [[-.28, .07, -.38], [-.29, .05, -.4], [-.3, .002, -.42], [-.31, .002, -.45]], 0x7bbf3a, .003);
+        // passe-câbles verticaux à doigts
+        const vm = part(g, ctx, 'Passe-câbles verticaux', "Goulottes à doigts de chaque côté des montants : les cordons y descendent proprement au lieu de pendre devant les équipements.", [0, 0, .9]);
+        for (const sx of [-1, 1]) {
+          box(vm, [.004, N * U, .05], [sx * .287, y0 + N * U / 2, Zf - .01], mk('black'));
+          for (let u = 0; u < N; u++) for (const dx of [-.012, .012]) box(vm, [.004, .01, .045], [sx * .262 + dx * 0 + sx * (dx > 0 ? .022 : 0), y0 + (u + .5) * U, Zf + .012], mk('plastic', { color: 0x15171a }), .0015);
+        }
+        // poignées et étiquettes d'inventaire en façade
+        const tag = { 'Serveur web': 'SRV-0451', 'Serveur de fichiers': 'SRV-0452', 'Contrôleur de domaine (AD)': 'SRV-0453', 'Baie de stockage (NAS)': 'NAS-0112' };
+        [[5, 2, 'Serveur web'], [7, 2, 'Serveur de fichiers'], [9, 2, 'Contrôleur de domaine (AD)'], [14, 2, 'Baie de stockage (NAS)'], [20, 3, 'Onduleur (UPS)']].forEach(([u, h, label]) => {
+          const p = findPart(ctx, label); if (!p) return;
+          for (const sx of [-1, 1]) handle(p, sx * .2235, yAt(u, h), Zf + .004, h * U - .03);
+          if (tag[label]) barcode(p, .034, .01, [label.includes('NAS') ? .17 : -.06, yAt(u, h) - h * U / 2 + .009, Zf + .0068], tag[label]);
+        });
+        // face arrière : alimentations, ports, ventilateurs
+        const back = [[3, 1, 'Switch 24 ports', 'sw'], [5, 2, 'Serveur web', 'srv'], [7, 2, 'Serveur de fichiers', 'srv'], [9, 2, 'Contrôleur de domaine (AD)', 'srv'], [11, 1, 'Pare-feu', 'fw'], [12, 1, 'Serveur 1U (supervision)', 's1'], [13, 1, 'Serveur 1U (sauvegardes)', 's1'], [14, 2, 'Baie de stockage (NAS)', 'srv']];
+        const rc = part(g, ctx, 'Câblage arrière', "Câbles d'alimentation (noirs) vers la multiprise et câbles réseau (bleus) qui remontent vers le haut de la baie, attachés en faisceau.", [0, .2, -1.2]);
+        back.forEach(([u, h, label, kind], i) => {
+          const p = findPart(ctx, label); if (!p) return;
+          const yc = yAt(u, h), r = rearGroup(p);
+          const psus = kind === 'srv' ? [.155, .1] : [.17];
+          psus.forEach(px => {
+            box(r, [.05, Math.min(.038, h * U - .006), .03], [-px, yc, -RZ + .015], mk('alu'), .0015);
+            holes(r, .03, Math.min(.026, h * U - .014), [-px - .006, yc, -RZ + .0302], { density: 1100 });
+            box(r, [.012, .009, .002], [-px + .017, yc + .006, -RZ + .031], mk('black'), .001);
+            led(r, ctx, [-px + .017, yc - .008, -RZ + .0302], 0x37e27a, .0022, { th: -2 });
+            tube(rc, [[px - .017, yc + .006, RZ - .032], [px - .01, yc, RZ - .06], [.2, y0 + .12 + ((i * 2 + (px > .12 ? 0 : 1)) % 12) * .06, -.29], [.2326, y0 + .12 + ((i * 2 + (px > .12 ? 0 : 1)) % 12) * .06, -.3]], 0x111214, .0032);
+          });
+          if (kind !== 'sw') {
+            for (let n = 0; n < (kind === 'fw' ? 4 : 2); n++) {
+              const x = -.15 + n * .0165;
+              rj45(r, -x, yc + (h > 1 ? .012 : 0), -RZ);
+              const s = [x, yc + (h > 1 ? .012 : 0), RZ - .002];
+              const e = plug(rc, s, 0x2f7de1, -1);
+              tube(rc, [e, [x, s[1], RZ - .06], [-.2, s[1] + .03, RZ - .09], [-.235, s[1] + .1, -.25], [-.24, H - .06, -.27]], 0x2f7de1, .0026);
+            }
+            box(r, [.031, .012, .004], [.08, yc - (h > 1 ? .015 : 0), -RZ + .002], mk('plastic', { color: 0x2f5fd1 }), .002);
+            for (const dy of [-.004, .004]) { box(r, [.013, .0055, .002], [.04, yc + dy - (h > 1 ? .015 : 0), -RZ + .001], mk('nickel'), .0004); box(r, [.011, .0035, .0005], [.04, yc + dy - (h > 1 ? .015 : 0), -RZ + .0022], mk('void')); }
+          }
+          if (kind !== 'fw') fanDisc(r, ctx, [-.02, yc, -RZ + .0006], Math.min(.018, h * U / 2 - .004), 1, 20);
+        });
+        const ups = findPart(ctx, 'Onduleur (UPS)'), ur = rearGroup(ups), uy = yAt(20, 3);
+        for (let i = 0; i < 6; i++) { box(ur, [.016, .022, .004], [-.15 + i * .025, uy + .02, -(Zf - .55 - .0025) + .002], mk('black'), .002); box(ur, [.009, .006, .0006], [-.15 + i * .025, uy + .022, -(Zf - .55 - .0025) + .0045], mk('void')); }
+        tube(rc, [[.15, uy + .02, Zf - .555 - .006], [.18, uy, Zf - .6], [.22, uy - .05, -.3], [.255, y0 + .05, -.3]], 0x111214, .005);
+      },
+
+      switch(g, ctx) {
+        const W = .44, H = .0435, D = .25, Z = D / 2;
+        const b = findPart(ctx, 'Boîtier');
+        for (const x of [-.1, .04]) fanDisc(b, ctx, [x, 0, -Z - .0004], .0175, -1, 24);
+        for (let i = 0; i < 6; i++) cyl(b, .0026, .0008, [-.2 + i * .08, H / 2 - .001 + .0004, -Z + .006], mk('nickel'), 'y', 16);
+        for (let i = 0; i < 3; i++) cyl(b, .0026, .0008, [-.2 + i * .2, H / 2 - .001 + .0004, Z - .02], mk('nickel'), 'y', 16);
+        box(b, [W - .004, .0006, .0012], [0, H / 2 - .001 + .0001, Z - .03], mk('void'));
+        cyl(b, .003, .002, [-.19, -.008, -Z - .001], mk('nickel'), '-z', 16);
+        textPlane(b, .12, .022, [-.14, .006, -Z - .0003], (g2, k, X, Y) => { g2.fillStyle = 'rgba(230,235,240,.75)'; font(g2, k, .0034, 700); g2.textAlign = 'left'; g2.fillText('MAC 3C:A8:2A:5F:09:1E', X(-.055), Y(.005)); g2.fillText('CONSOLE 9600 8N1', X(-.055), Y(-.003)); }, { res: 1024, ry: Math.PI });
+        const pw = part(g, ctx, "Câble d'alimentation", "Cordon secteur 230 V branché à l'arrière, avec sa prise C13 et son clip de maintien.", [0, -.3, -1.6]);
+        box(pw, [.024, .016, .022], [.16, 0, -Z - .015], mk('black'), .003);
+        box(pw, [.03, .003, .02], [.16, .0095, -Z - .01], mk('nickel'), .001);
+        tube(pw, [[.16, 0, -Z - .026], [.16, 0, -Z - .06], [.18, -.012, -Z - .1], [.2, -H / 2 - .001, -Z - .15], [.23, -H / 2 - .001, -Z - .28]], 0x15161a, .0035);
+        const flags = part(g, ctx, 'Étiquettes de câbles', "Chaque câble porte une étiquette avec le nom de la prise murale : indispensable pour savoir ce qu'on débranche.", [0, .4, 1.6]);
+        const colX = (c) => -.150 + c * .0165 + Math.floor(c / 6) * .008;
+        [0, 1, 2, 3, 6, 7, 10, 13, 16, 17, 20, 22].forEach((i, n) => {
+          const x = colX(i >> 1), y = i % 2 === 0 ? .0077 : -.0077;
+          box(flags, [.0012, .011, .016], [x + .0075, y - .002, Z + .062], mk('white', { clearcoat: .1 }), .0005);
+          textPlane(flags, .015, .009, [x + .0082, y - .002, Z + .062], (g2, k, X, Y) => { g2.fillStyle = '#222'; font(g2, k, .0028, 800); g2.textAlign = 'center'; g2.fillText('B' + (12 + n), X(0), Y(.0015)); font(g2, k, .0019, 600); g2.fillText('BUR-' + (2 + n), X(0), Y(-.002)); }, { res: 256, ry: Math.PI / 2 });
+        });
+      },
+
+      server(g, ctx) {
+        const W = .434, H = .043, D = .7, F = D / 2;
+        const mb = findPart(ctx, 'Carte mère');
+        const Y = .0078;
+        box(mb, [.012, .01, .052], [.185, Y + .005, .05], mk('white', { color: 0xf1efe8, clearcoat: .1 }), .001);
+        for (let i = 0; i < 12; i++) box(mb, [.0035, .0002, .0035], [.182 + (i % 2) * .005, Y + .0101, .03 + (i >> 1) * .008], mk('void'));
+        cyl(mb, .01, .0032, [-.05, Y + .0016, .045], mk('nickel', { roughness: .25 }), 'y', 32);
+        textPlane(mb, .016, .006, [-.05, Y + .0033, .045], (g2, k, X, Y2) => { g2.fillStyle = 'rgba(60,64,70,.8)'; font(g2, k, .0028, 800); g2.textAlign = 'center'; g2.fillText('CR2032', X(0), Y2(0)); }, { res: 256, rx: -Math.PI / 2 });
+        chip(mb, [.03, .04], [.016, .016], 'BMC', 'AST2600', Y);
+        chip(mb, [.075, .045], [.01, .01], 'TPM', '2.0', Y);
+        for (let i = 0; i < 6; i++) box(mb, [.006, .009, .012], [-.192, Y + .0045, -.0 + i * .014], mk('black'), .0008);
+        for (let s = 0; s < 2; s++) { box(mb, [.09, .011, .008], [-.03, Y + .0055, -.215 - s * .02], mk('black'), .001); box(mb, [.086, .002, .002], [-.03, Y + .0112, -.215 - s * .02], mk('void')); }
+        const m2 = part(g, ctx, 'SSD M.2 (système)', "Petit disque SSD NVMe vissé sur la carte mère : il contient le système d'exploitation et démarre en quelques secondes.", [0, 1.8, .6]);
+        box(m2, [.08, .0012, .022], [-.12, Y + .0016, .03], mk('green'));
+        box(m2, [.022, .0014, .018], [-.14, Y + .0028, .03], mk('black'), .0005);
+        box(m2, [.018, .0014, .016], [-.112, Y + .0028, .03], mk('black'), .0005);
+        textPlane(m2, .05, .016, [-.115, Y + .0037, .03], (g2, k, X, Y2) => { g2.fillStyle = '#eef0f2'; g2.fillRect(X(-.024), Y2(.007), .048 * k, .014 * k); g2.fillStyle = '#123'; font(g2, k, .0034, 800); g2.textAlign = 'left'; g2.fillText('NVMe 960 GB', X(-.021), Y2(.002)); font(g2, k, .0024, 600); g2.fillText('PCIe Gen4 x4 · M.2 2280', X(-.021), Y2(-.003)); }, { res: 512, rx: -Math.PI / 2 });
+        cyl(m2, .0022, .001, [-.162, Y + .0026, .03], mk('nickel'), 'y', 16);
+        const sh = part(g, ctx, "Conduit d'air", "Capot en plastique transparent posé sur les processeurs et la mémoire : il force l'air des ventilateurs à passer exactement là où ça chauffe.", [0, 3.2, 0]);
+        box(sh, [.34, .0015, .17], [0, .041, -.13], mk('glass', { opacity: .18 }), .004);
+        for (const sx of [-1, 1]) box(sh, [.0015, .032, .17], [sx * .17, .025, -.13], mk('glass', { opacity: .18 }));
+        const pc = part(g, ctx, "Câbles d'alimentation internes", "Relient la carte de distribution des alimentations à la carte mère (connecteur 24 broches) et aux processeurs.", [0, 1.4, 0]);
+        for (const dx of [-.004, 0, .004]) tube(pc, [[.13 + dx, .02, -.14], [.13 + dx, .03, -.08], [.175 + dx, .022, .0], [.185 + dx, .012, .022]], 0x161718, .0018);
+        const io = rearGroup(findPart(ctx, 'Châssis'));
+        box(io, [.031, .012, .004], [.04, .02, F + .002], mk('plastic', { color: 0x2f5fd1 }), .002);
+        for (let i = 0; i < 15; i++) box(io, [.0012, .0012, .0006], [.03 + (i % 5) * .005 + (i > 9 ? .0025 : 0), .016 + Math.floor(i / 5) * .004, F + .0042], mk('void'));
+        for (const dy of [.012, .026]) { box(io, [.013, .0055, .002], [.0, dy, F + .001], mk('nickel'), .0004); box(io, [.011, .0035, .0005], [.0, dy, F + .0022], mk('void')); }
+        rj45(io, -.025, .02, F); rj45(io, -.043, .02, F); rj45(io, -.061, .02, F, false, 'plastic');
+        textPlane(io, .11, .006, [-.01, .034, F + .0003], (g2, k, X, Y2) => { g2.fillStyle = 'rgba(30,35,40,.8)'; font(g2, k, .0026, 700); g2.textAlign = 'center'; [['VGA', .04], ['USB', 0], ['LAN1', -.025], ['LAN2', -.043], ['BMC', -.061]].forEach(([n, x]) => g2.fillText(n, X(x), Y2(0))); }, { res: 1024 });
+        const fp = findPart(ctx, 'Baies de disques (4)');
+        for (const sx of [-1, 1]) { box(fp, [.024, H, .003], [sx * (W / 2 + .012), H / 2, F - .0015], mk('paint'), .001); screw(fp, sx * (W / 2 + .012), H / 2, F); }
+        led(fp, ctx, [-.2, H / 2 + .008, F + .0005], 0x3aa8ff, .002, { f: .8, th: .6 });
+        barcode(fp, .03, .009, [.2, H / 2 - .01, F + .0004], 'SRV-0460');
+      },
+
+      pi(g, ctx) {
+        const W = .085, D = .056, t = .0014;
+        const pcb = findPart(ctx, 'Circuit imprimé');
+        chip(pcb, [.02, -.006], [.0075, .0075], 'USB3', 'CTRL', t, .0009);
+        chip(pcb, [.011, -.0165], [.0062, .0062], 'PHY', 'GbE', t, .0009);
+        chip(pcb, [-.031, -.012], [.005, .005], 'PMIC', '', t, .0008);
+        box(pcb, [.0032, .0008, .0019], [-.002, t + .0004, -.0125], mk('nickel'), .0004);
+        for (const [x, z] of [[-.036, -.004], [-.0335, -.0075], [-.025, -.0055]]) box(pcb, [.0028, .0016, .0028], [x, t + .0008, z], mk('steel', { color: 0x6a7076 }), .0005);
+        for (let i = 0; i < 26; i++) box(pcb, [.0011, .0005, .0006], [-.026 + (i % 13) * .0018, t + .00025, .016 + (i >> 4) * .0014 - (i > 12 ? .0014 : 0)], mk(i % 3 ? 'black' : 'steel', i % 3 ? {} : { color: 0x8a6a45 }));
+        for (let i = 0; i < 5; i++) box(pcb, [.0035, .0001, .0004], [-.04 + (i % 2) * .0012, t + .00005, .021 + i * .0012], mk('gold'));
+        const under = [];
+        for (let i = 0; i < 40; i++) under.push(box(pcb, [.0012 + Math.random() * .0012, .0005, .0007], [(Math.random() - .5) * .07, -.00025, (Math.random() - .5) * .045], mk(Math.random() < .6 ? 'black' : 'steel')));
+        box(pcb, [.008, .0006, .008], [-.0135, -.0003, .0035], mk('black'), .0004);
+        const hs = part(g, ctx, 'Dissipateur (option)', "Petit radiateur en aluminium collé sur le processeur : il évite que le Pi ralentisse quand il chauffe.", [0, 3.6, 0]);
+        box(hs, [.014, .0015, .014], [-.0135, t + .0032, .0035], mk('alu', { color: 0x9aa4ae }), .0008);
+        for (let i = 0; i < 6; i++) box(hs, [.0012, .006, .014], [-.0195 + i * .0024, t + .0069, .0035], mk('alu', { color: 0x9aa4ae }), .0003);
+      },
+
+      router(g, ctx) {
+        const W = .26, H = .036, D = .17;
+        const b = findPart(ctx, 'Boîtier');
+        box(b, [.16, .012, .002], [0, -.003, D / 2 - .0004], mk('black', { color: 0x0c0d0f, roughness: .08, clearcoat: 1, clearcoatRoughness: .05 }), .003);
+        deco(plane(b, .2, .12, [0, -H / 2 - .0003, 0], MAT.slots, { rx: Math.PI / 2, uv: 220 }));
+        for (const sx of [-1, 1]) deco(plane(b, .1, .016, [sx * (W / 2 + .0003), .0, .0], MAT.slots, { ry: sx * Math.PI / 2, uv: 300 }));
+        for (const sx of [-1, 1]) { box(b, [.012, .0004, .005], [sx * .07, -H / 2 - .0004, -.04], mk('void')); cyl(b, .004, .0004, [sx * .07 - .006, -H / 2 - .0004, -.04], mk('void'), 'y', 20); }
+        const logo = new T.Mesh(new T.TorusGeometry(.016, .0012, 8, 48), mk('nickel')); logo.rotation.x = Math.PI / 2; logo.position.set(0, H / 2 + .0006, .04); b.add(logo);
+        const pw = findPart(ctx, 'Câbles branchés');
+        const back = -D / 2;
+        box(pw, [.045, .028, .07], [.15, -H / 2 + .013, back - .25], mk('black', { roughness: .45 }), .006);
+        textPlane(pw, .03, .03, [.15, -H / 2 + .0272, back - .25], (g2, k, X, Y) => { g2.fillStyle = 'rgba(220,220,220,.6)'; font(g2, k, .0032, 700); g2.textAlign = 'center'; g2.fillText('INPUT 100-240V~', X(0), Y(.006)); g2.fillText('OUTPUT 12V ⎓ 2A', X(0), Y(0)); }, { res: 512, rx: -Math.PI / 2 });
+        tube(pw, [[.15, -H / 2 + .006, back - .285], [.15, -H / 2 + .001, back - .33], [.17, -H / 2 + .001, back - .42]], 0x111111, .0028);
+        const fl = part(g, ctx, 'Étiquette Wi-Fi', "Sous le routeur : le nom du réseau (SSID) et le mot de passe Wi-Fi par défaut, à changer dès l'installation.", [0, -2.4, 0]);
+        textPlane(fl, .09, .05, [0, -H / 2 - .0006, .02], (g2, k, X, Y) => {
+          g2.fillStyle = '#f4f5f6'; g2.fillRect(0, 0, 1e4, 1e4); g2.fillStyle = '#1b2228'; g2.textAlign = 'left';
+          font(g2, k, .0055, 800, SANS); g2.fillText('AX3000 Wi-Fi 6', X(-.04), Y(.017));
+          font(g2, k, .0036, 600); g2.fillText('SSID : CIEL-LAB-5G', X(-.04), Y(.006)); g2.fillText('Clé : 7h2K-pQ9x-Lm4R', X(-.04), Y(-.001)); g2.fillText('Admin : http://192.168.1.1', X(-.04), Y(-.008));
+          g2.fillRect(X(.022), Y(.012), .016 * k, .016 * k); g2.fillStyle = '#f4f5f6'; for (let i = 0; i < 40; i++) g2.fillRect(X(.022 + Math.random() * .014), Y(.012 - Math.random() * .014), .0015 * k, .0015 * k);
+        }, { res: 768, rx: Math.PI / 2 });
+      }
+    };
+
     /* ---------- Visionneuse ---------- */
     const ray = new T.Raycaster(), ndc = new T.Vector2();
     const viewers = [];
@@ -613,7 +799,9 @@
       if (v.canvas.width !== v.pw || v.canvas.height !== v.ph) { v.canvas.width = v.pw; v.canvas.height = v.ph; }
       v.cam.aspect = w / h; v.cam.updateProjectionMatrix();
       if (v.cam && v.scene) { v.needsDraw = true; }
-      v.base = v.fit / Math.min(1, v.cam.aspect * 1.05);
+      const tanF = Math.tan(T.MathUtils.degToRad(v.cam.fov / 2)), sz = v.size;
+      const hHalf = Math.max(sz.x, sz.z) / 2, vHalf = sz.y / 2;
+      v.base = Math.max(vHalf / tanF, hHalf / (tanF * v.cam.aspect)) * 1.08 + hHalf * .4;
     }
     function setExplode(v, x) { v.tEx = clamp(x, 0, 1); if (v.modal) $('#mExplode').value = Math.round(v.tEx * 100); updExBtn(v); }
     function updExBtn(v) { const b = $('.explode', v.card); b.textContent = v.tEx > .01 ? 'Rassembler' : 'Éclater'; b.setAttribute('aria-pressed', v.tEx > .01); }
@@ -737,6 +925,7 @@
       const root3 = new T.Group(); scene.add(root3);
       const ctx = { leds: [], spin: [], sway: [], parts: [] };
       def.build(root3, ctx);
+      if (DETAILS[card.dataset.model]) DETAILS[card.dataset.model](root3, ctx);
       if (ctx.door) ctx.door.rotation.y = 1.9;
       const bb = new T.Box3().setFromObject(root3), size = bb.getSize(new T.Vector3());
       root3.position.sub(bb.getCenter(new T.Vector3()));
@@ -774,7 +963,7 @@
       const cam = new T.PerspectiveCamera(30, 1, rad * .01, rad * 60);
       const fit = rad / Math.sin(T.MathUtils.degToRad(cam.fov / 2)) * .9;
       const v = {
-        card, def, stage, canvas, c2, scene, cam, root: root3, ctx, fit, base: fit, rad,
+        size, card, def, stage, canvas, c2, scene, cam, root: root3, ctx, fit, base: fit, rad,
         yaw: def.yaw - 1.2, pitch: def.pitch, zoom: 1.7, tYaw: def.yaw, tPitch: def.pitch, tZoom: 1,
         ex: 0, tEx: 0, door: 0, auto: !reduce, visible: false, modal: false, hover: null, sel: null, isolated: null,
         tip: $('.tip', stage), info: $('.info', card), pointers: new Map(), moved: 0, shadowDirty: true, started: false
