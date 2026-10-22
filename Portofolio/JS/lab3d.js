@@ -108,12 +108,12 @@
       if (GC.has(key)) return GC.get(key);
       let g;
       const rr = Math.min(r, w / 2 - 1e-5, h / 2 - 1e-5, d / 2 - 1e-5);
-      if (T.RoundedBoxGeometry && rr > 0.0002 && Math.min(w, h, d) > .005) g = new T.RoundedBoxGeometry(w, h, d, 2, rr);
+      if (T.RoundedBoxGeometry && rr > 0.0002 && Math.min(w, h, d) > .004) g = new T.RoundedBoxGeometry(w, h, d, 3, rr);
       else g = new T.BoxGeometry(w, h, d);
       GC.set(key, g); return g;
     }
     function box(p, [w, h, d], [x, y, z], m, r = 0) { const o = new T.Mesh(geoBox(w, h, d, r), m); o.position.set(x, y, z); p.add(o); return o; }
-    function cyl(p, r, h, [x, y, z], m, axis = 'y', seg = r > .01 ? 28 : 14, r2) {
+    function cyl(p, r, h, [x, y, z], m, axis = 'y', seg = r > .01 ? 32 : 20, r2) {
       const o = new T.Mesh(new T.CylinderGeometry(r2 ?? r, r, h, seg), m); o.position.set(x, y, z);
       if (axis === 'z') o.rotation.x = Math.PI / 2; else if (axis === 'x') o.rotation.z = Math.PI / 2; else if (axis === '-z') o.rotation.x = -Math.PI / 2;
       p.add(o); return o;
@@ -134,9 +134,9 @@
       return deco(plane(p, w, h, pos, m, o));
     }
     const font = (g, k, size, weight = 700, fam = MONO) => { g.font = `${weight} ${Math.max(6, size * k)}px ${fam}`; };
-    function tube(p, pts, color, r = .0028, seg = 40) {
+    function tube(p, pts, color, r = .0028, seg = 56) {
       const curve = new T.CatmullRomCurve3(pts.map(a => new T.Vector3(...a)), false, 'centripetal');
-      const o = new T.Mesh(new T.TubeGeometry(curve, seg, r, 7, false), mk('cable', { color })); p.add(o); return o;
+      const o = new T.Mesh(new T.TubeGeometry(curve, seg, r, 10, false), mk('cable', { color })); p.add(o); return o;
     }
     const screw = (p, x, y, z) => { cyl(p, .0031, .0014, [x, y, z + .0007], mk('nickel'), 'z', 20); box(p, [.004, .0007, .0003], [x, y, z + .0015], mk('void')); };
 
@@ -608,16 +608,43 @@
     function resize(v) {
       const host = v.canvas.parentElement, w = host.clientWidth, h = host.clientHeight;
       if (!w || !h) return;
-      v.renderer.setPixelRatio(Math.max(.6, Math.min(devicePixelRatio || 1, v.modal ? 1.75 : 1.25) * quality));
-      v.renderer.setSize(w, h, false);
+      const dpr = Math.min(devicePixelRatio || 1, v.modal ? 2 : 1.5);
+      v.pw = Math.round(w * dpr); v.ph = Math.round(h * dpr);
+      if (v.canvas.width !== v.pw || v.canvas.height !== v.ph) { v.canvas.width = v.pw; v.canvas.height = v.ph; }
       v.cam.aspect = w / h; v.cam.updateProjectionMatrix();
+      if (v.cam && v.scene) { v.needsDraw = true; }
       v.base = v.fit / Math.min(1, v.cam.aspect * 1.05);
     }
     function setExplode(v, x) { v.tEx = clamp(x, 0, 1); if (v.modal) $('#mExplode').value = Math.round(v.tEx * 100); updExBtn(v); }
     function updExBtn(v) { const b = $('.explode', v.card); b.textContent = v.tEx > .01 ? 'Rassembler' : 'Éclater'; b.setAttribute('aria-pressed', v.tEx > .01); }
 
-    const lowEnd = (navigator.hardwareConcurrency || 4) <= 4 || matchMedia('(pointer: coarse)').matches;
-    let quality = lowEnd ? .8 : 1;
+    // Un seul moteur WebGL partagé par tous les modèles : les shaders, l'éclairage
+    // et les textures ne sont préparés qu'une fois, puis chaque image est recopiée
+    // dans la carte du modèle. Même qualité, beaucoup moins de travail.
+    const GL = new T.WebGLRenderer({ antialias: true, alpha: true, powerPreference: 'high-performance', premultipliedAlpha: true });
+    GL.setPixelRatio(1);
+    GL.outputEncoding = T.sRGBEncoding;
+    GL.toneMapping = T.ACESFilmicToneMapping; GL.toneMappingExposure = 1;
+    GL.shadowMap.enabled = true; GL.shadowMap.type = T.PCFSoftShadowMap; GL.shadowMap.autoUpdate = false;
+    GL.setClearColor(0x000000, 0);
+    let glW = 1, glH = 1;
+    function ensureGL(w, h) {
+      if (w <= glW && h <= glH) return;
+      glW = Math.max(glW, Math.ceil(w / 64) * 64); glH = Math.max(glH, Math.ceil(h / 64) * 64);
+      GL.setSize(glW, glH, false);
+    }
+    let ENV = null;
+    if (T.RoomEnvironment) { const pm = new T.PMREMGenerator(GL); ENV = pm.fromScene(new T.RoomEnvironment(), .04).texture; pm.dispose(); }
+    function draw(v) {
+      const w = v.pw, h = v.ph; if (!w || !h) return;
+      ensureGL(w, h);
+      GL.setViewport(0, 0, w, h); GL.setScissor(0, 0, w, h); GL.setScissorTest(true);
+      GL.clear();
+      if (v.shadowDirty) { GL.shadowMap.needsUpdate = true; v.shadowDirty = false; }
+      GL.render(v.scene, v.cam);
+      v.c2.clearRect(0, 0, w, h);
+      v.c2.drawImage(GL.domElement, 0, glH - h, w, h, 0, 0, w, h);
+    }
 
     // Fusionne les pièces qui partagent le même matériau : des milliers d'objets
     // deviennent quelques dizaines, ce qui divise énormément le travail de la carte graphique.
@@ -701,18 +728,12 @@
 
     function create(card) {
       const def = MODELS[card.dataset.model], stage = $('.stage', card);
-      const renderer = new T.WebGLRenderer({ antialias: !lowEnd, alpha: true, powerPreference: 'high-performance' });
-      renderer.outputEncoding = T.sRGBEncoding;
-      renderer.toneMapping = T.ACESFilmicToneMapping; renderer.toneMappingExposure = 1;
-      renderer.shadowMap.enabled = true; renderer.shadowMap.type = T.PCFSoftShadowMap; renderer.shadowMap.autoUpdate = false;
-      const canvas = renderer.domElement; canvas.className = 'gl';
+      const canvas = document.createElement('canvas'); canvas.className = 'gl';
+      const c2 = canvas.getContext('2d', { alpha: true });
       stage.prepend(canvas);
       const ld = $('.loading', stage); if (ld) ld.remove();
       const scene = new T.Scene();
-      if (T.RoomEnvironment) {
-        const pm = new T.PMREMGenerator(renderer);
-        scene.environment = pm.fromScene(new T.RoomEnvironment(), .04).texture; pm.dispose();
-      }
+      if (ENV) scene.environment = ENV;
       const root3 = new T.Group(); scene.add(root3);
       const ctx = { leds: [], spin: [], sway: [], parts: [] };
       def.build(root3, ctx);
@@ -746,14 +767,14 @@
       const key = new T.DirectionalLight(0xffffff, 1.6);
       key.position.set(rad * .7, rad * 3.6, rad * 1.1); key.castShadow = true;
       const sc = key.shadow.camera; sc.left = -rad * 1.6; sc.right = rad * 1.6; sc.top = rad * 1.6; sc.bottom = -rad * 1.6; sc.near = rad * .1; sc.far = rad * 8;
-      const sm = lowEnd ? 1024 : (card.dataset.model === 'rack' ? 2048 : 1024);
+      const sm = card.dataset.model === 'rack' ? 2048 : 1024;
       key.shadow.mapSize.set(sm, sm); key.shadow.bias = -.0004; key.shadow.normalBias = rad * .004;
       scene.add(key);
       const rim = new T.DirectionalLight(0xbfe3ff, .7); rim.position.set(-rad * 2, rad * 1.2, -rad * 2); scene.add(rim);
       const cam = new T.PerspectiveCamera(30, 1, rad * .01, rad * 60);
       const fit = rad / Math.sin(T.MathUtils.degToRad(cam.fov / 2)) * .9;
       const v = {
-        card, def, stage, renderer, canvas, scene, cam, root: root3, ctx, fit, base: fit, rad,
+        card, def, stage, canvas, c2, scene, cam, root: root3, ctx, fit, base: fit, rad,
         yaw: def.yaw - 1.2, pitch: def.pitch, zoom: 1.7, tYaw: def.yaw, tPitch: def.pitch, tZoom: 1,
         ex: 0, tEx: 0, door: 0, auto: !reduce, visible: false, modal: false, hover: null, sel: null, isolated: null,
         tip: $('.tip', stage), info: $('.info', card), pointers: new Map(), moved: 0, shadowDirty: true, started: false
@@ -762,6 +783,8 @@
       buildLeds(v);
       let n = 0; root3.traverse(o => { if (o.isMesh) n++; }); v.drawCalls = n;
       resize(v);
+      cam.position.set(0, rad, fit); cam.lookAt(0, 0, 0);
+      try { GL.compile(scene, cam); } catch (_) {}
 
       canvas.addEventListener('pointerdown', (e) => {
         v.pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
@@ -880,23 +903,14 @@
     cards.forEach(c => near.observe(c));
     $$('.inspect, .explode').forEach(b => b.addEventListener('pointerdown', () => build(b.closest('.viewer-card')), { capture: true }));
 
-    let last = performance.now(), ema = 16, slowFor = 0, fastFor = 0;
-    function adapt(dtMs) {
-      ema += (dtMs - ema) * .08;
-      if (ema > 24) { slowFor += dtMs; fastFor = 0; } else if (ema < 15) { fastFor += dtMs; slowFor = 0; } else { slowFor = fastFor = 0; }
-      if (slowFor > 1200 && quality > .6) { quality = Math.max(.6, quality - .15); slowFor = 0; viewers.forEach(resize); }
-      if (fastFor > 4000 && quality < 1) { quality = Math.min(1, quality + .1); fastFor = 0; viewers.forEach(resize); }
-    }
+    let last = performance.now();
     function loop(now) {
       const dtMs = now - last, dt = Math.min(.05, dtMs / 1000); last = now;
-      const t = now / 1000, k = 1 - Math.exp(-dt * 7);
-      let drew = false;
+      const t = now / 1000;
       for (const v of viewers) {
         if (!(v.visible || v.modal)) continue;
         if (current && !v.modal) continue;               // la fenêtre d'inspection cache les autres modèles
-        const busy = v.modal || v.drag || v.hover || Math.abs(v.tEx - v.ex) > .0005 || (v.ctx.door && v.door < 1);
-        if (!busy && v.lastDraw && now - v.lastDraw < 32) continue;   // ~30 images/s pour les cartes au repos
-        const vdt = v.lastDraw ? Math.min(.05, (now - v.lastDraw) / 1000) : dt; v.lastDraw = now; drew = true;
+        const vdt = dt;
         if (!v.started) { v.started = true; v.tStart = t; }
         const kv = 1 - Math.exp(-vdt * 7);
         if (v.auto && !v.drag) v.tYaw += vdt * .28 + clamp(motion.vel, -60, 60) * .0009;
@@ -922,10 +936,8 @@
           for (const s of v.ctx.spin) s.o.rotation.z += vdt * s.s;
           for (const s of v.ctx.sway) s.o.rotation.z = s.base + Math.sin(t * 1.1 + s.p) * .025;
         }
-        if (v.shadowDirty) { v.renderer.shadowMap.needsUpdate = true; v.shadowDirty = false; }
-        v.renderer.render(v.scene, v.cam);
+        draw(v);
       }
-      if (drew) adapt(dtMs);
       requestAnimationFrame(loop);
     }
     requestAnimationFrame(loop);
