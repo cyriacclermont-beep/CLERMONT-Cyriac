@@ -451,8 +451,8 @@
 
     // 7. Frise et contact
     $$('.step').forEach((s, i) => gsap.fromTo(s, { x: i % 2 ? 80 : -80, rotate: i % 2 ? 2 : -2 }, { x: 0, rotate: 0, ease: 'none', scrollTrigger: { trigger: s, start: 'top bottom', end: 'top 65%', scrub: .6 } }));
-    gsap.fromTo('.big', { yPercent: 45, scale: .86, rotate: -3 }, { yPercent: 0, scale: 1, rotate: 0, ease: 'none', scrollTrigger: { trigger: '#contact', start: 'top bottom', end: 'top 40%', scrub: .6 } });
-    gsap.fromTo('.big em', { letterSpacing: '.25em' }, { letterSpacing: '-.02em', ease: 'none', scrollTrigger: { trigger: '#contact', start: 'top 90%', end: 'top 40%', scrub: .6 } });
+    gsap.fromTo('#contact .big', { yPercent: 45, scale: .86, rotate: -3 }, { yPercent: 0, scale: 1, rotate: 0, ease: 'none', scrollTrigger: { trigger: '#contact', start: 'top bottom', end: 'top 40%', scrub: .6 } });
+    gsap.fromTo('#contact .big em', { letterSpacing: '.25em' }, { letterSpacing: '-.02em', ease: 'none', scrollTrigger: { trigger: '#contact', start: 'top 90%', end: 'top 40%', scrub: .6 } });
     gsap.fromTo('.stats .stat', { y: (i) => 40 + i * 25 }, { y: 0, ease: 'none', stagger: .05, scrollTrigger: { trigger: '.stats', start: 'top bottom', end: 'top 55%', scrub: .6 } });
 
     addEventListener('load', () => ScrollTrigger.refresh());
